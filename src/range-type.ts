@@ -28,81 +28,16 @@ async function getType(
     await session.ghci.sendCommand(
         `:module *${session.getModuleName(doc.uri.fsPath)}`);
 
-    let completed = false;
+    const res = await session.ghci.sendCommand(
+        `:type-at ${JSON.stringify(doc.uri.fsPath)}`
+        + ` ${selRangeOrPos.start.line + 1} ${selRangeOrPos.start.character + 1}`
+        + ` ${selRangeOrPos.end.line + 1} ${selRangeOrPos.end.character + 1}`);
+    const resStr = res.map(l => l.trim()).join(' ');
 
-    if (session.typeCache === null) {
-        session.typeCache = session.ghci.sendCommand(':all-types');
-
-        const shouldNotify = () =>
-            ! hasNotified
-            && ! vscode.workspace
-                .getConfiguration('ghcSimple.flag', doc.uri)
-                .get('noNotifySlowRangeType');
-
-        if (shouldNotify()) {
-            const time = 10;
-
-            setTimeout(async () => {
-                if (! completed && shouldNotify()) {
-                    hasNotified = true;
-
-                    const res = await vscode.window.showWarningMessage(
-                        `GHCi spent more than ${time} seconds providing type. `
-                        + `Maybe project is too large? Try disabling range types.`,
-                        'Disable and restart',
-                        'Do not ask again',
-                        'Dismiss'
-                    );
-                    if (res == 'Disable and restart') {
-                        vscode.workspace
-                            .getConfiguration('ghcSimple.feature', doc.uri)
-                            .update('rangeType', false);
-                        vscode.commands.executeCommand('vscode-ghc-simple.restart');
-                    } else if (res == 'Do not ask again') {
-                        vscode.workspace
-                            .getConfiguration('ghcSimple.flag', doc.uri)
-                            .update('noNotifySlowRangeType', true);
-                    }
-                }
-            }, time * 1000);
-        }
-    }
-
-    const typesB = await session.typeCache;
-    completed = true;
-
-    const strTypes = typesB.filter((x) => x.startsWith(doc.uri.fsPath));
-
-    // file:(l,c)-(l,c): type
-    const allTypes = strTypes.map((x) =>
-        /^:\((\d+),(\d+)\)-\((\d+),(\d+)\): (.*)$/.exec(x.substr(doc.uri.fsPath.length)));
-
-    let curBestRange: null | vscode.Range = null, curType: null | string = null;
-
-    for (const [_whatever, startLine, startCol, endLine, endCol, type] of allTypes) {
-        const curRange = new vscode.Range(+startLine - 1, +startCol - 1, +endLine - 1, +endCol - 1);
-        if (curRange.contains(selRangeOrPos)) {
-            if (curBestRange === null || curBestRange.contains(curRange)) {
-                curBestRange = curRange;
-                curType = type;
-            }
-        }
-    }
-
-    if (curType === null) {
+    if (resStr.startsWith(':: '))
+        return [selRangeOrPos, resStr.slice(':: '.length)];
+    else
         return null;
-    } else {
-        const res = await session.ghci.sendCommand(
-            `:type-at ${JSON.stringify(doc.uri.fsPath)}`
-            + ` ${curBestRange.start.line + 1} ${curBestRange.start.character + 1}`
-            + ` ${curBestRange.end.line + 1} ${curBestRange.end.character + 1}`);
-        const resStr = res.map(l => l.trim()).join(' ');
-
-        if (resStr.startsWith(':: '))
-            return [curBestRange, resStr.slice(':: '.length)];
-        else
-            return [curBestRange, curType.replace(/([A-Z][A-Za-z0-9_']*\.)+([A-Za-z0-9_']+)/g, '$2')];
-    }
 }
 
 export function registerRangeType(ext: ExtensionState) {
