@@ -11,11 +11,11 @@ async function getType(
     doc: vscode.TextDocument):
     Promise<null | [vscode.Range, string]> {
 
-    const selRangeOrPos: vscode.Range | vscode.Position = (() => {
+    const selRange: vscode.Range = (() => {
         if (sel instanceof vscode.Selection) {
             return new vscode.Range(sel.start, sel.end);
-        } else {
-            return sel;
+        } else if (sel instanceof vscode.Position) {
+            return new vscode.Range(sel, sel);
         }
     })();
 
@@ -30,12 +30,12 @@ async function getType(
 
     const res = await session.ghci.sendCommand(
         `:type-at ${JSON.stringify(doc.uri.fsPath)}`
-        + ` ${selRangeOrPos.start.line + 1} ${selRangeOrPos.start.character + 1}`
-        + ` ${selRangeOrPos.end.line + 1} ${selRangeOrPos.end.character + 1}`);
+        + ` ${selRange.start.line + 1} ${selRange.start.character + 1}`
+        + ` ${selRange.end.line + 1} ${selRange.end.character + 1}`);
     const resStr = res.map(l => l.trim()).join(' ');
 
     if (resStr.startsWith(':: '))
-        return [selRangeOrPos, resStr.slice(':: '.length)];
+        return [selRange, resStr.slice(':: '.length)];
     else
         return null;
 }
